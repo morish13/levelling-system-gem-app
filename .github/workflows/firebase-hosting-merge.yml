@@ -17,4 +17,4 @@ jobs:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SOLO_LEVEL_GEM_V2 }}
           channelId: live
-          projectId: solo-level-gem-v2
+          projectId: solo-level-gem-v2 
