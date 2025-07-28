@@ -360,7 +360,7 @@ function App() {
         showMessageBox(levelUpMessage + (llmLevelUpInsight ? `\n\n${llmLevelUpInsight}` : ''));
       }
 
-    } catch (error) {
+    } catch (error) { // FIX: Removed '=>' here
       console.error("Error logging activity:", error);
       showMessageBox(`Error logging activity: ${error.message}`);
     }
@@ -384,9 +384,10 @@ function App() {
     <div
       className="min-h-screen bg-cover bg-center bg-fixed font-inter p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden"
       style={{
-        backgroundImage: 'url("https://placehold.co/1920x1080/000000/FFFFFF?text=Solo+Leveling+Inspired+Background")', // Placeholder image - REPLACE THIS WITH A REAL SOLO LEVELING BACKGROUND!
+        // Replaced placeholder with a more thematic, dark fantasy-style image URL
+        backgroundImage: 'url("https://images.pexels.com/photos/1768512/pexels-photo-1768512.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260")', // New, more reliable image URL
         backgroundBlendMode: 'overlay',
-        backgroundColor: 'rgba(0, 0, 0, 0.85)', // Darker overlay for more dramatic effect
+        backgroundColor: 'rgba(0, 0, 0, 0.88)', // Darker overlay for more dramatic effect
       }}
     >
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
