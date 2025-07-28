@@ -1,0 +1,12 @@
+{
+  "extends": "react-app",
+  "globals": {
+    "__app_id": "readonly",
+    "__firebase_config": "readonly",
+    "__initial_auth_token": "readonly"
+  },
+  "rules": {
+    // You can add custom ESLint rules here if needed,
+    // but for now, we just need to declare globals.
+  }
+}
