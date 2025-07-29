@@ -74,7 +74,8 @@ function App() {
       // Sign in anonymously or with custom token
       const signIn = async () => {
         try {
-          if (initialAuthToken) {
+          // Only attempt signInWithCustomToken if initialAuthToken is actually provided and not empty
+          if (typeof initialAuthToken === 'string' && initialAuthToken.length > 0) {
             await signInWithCustomToken(authentication, initialAuthToken);
           } else {
             await signInAnonymously(authentication);
