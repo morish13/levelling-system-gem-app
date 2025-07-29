@@ -24,11 +24,6 @@ const firebaseConfig = {
   appId: "1:856640373652:web:9a0d053bd0284dff078581"
 };
 
-// Refined check for initialAuthToken: only use if it's a non-empty string (likely a valid token)
-const initialAuthToken = (typeof __initial_auth_token === 'string' && __initial_auth_token.length > 10) // Custom tokens are typically long
-  ? __initial_auth_token
-  : null;
-
 // Define predefined activities and their XP values
 const predefinedActivities = {
   'Complete 1-hour study session': 50,
@@ -90,16 +85,29 @@ function App() {
       setDb(firestore);
       setAuth(authentication);
 
+      // Function to handle initial sign-in logic
+      const signIn = async () => {
+        try {
+          // Only attempt signInWithCustomToken if __initial_auth_token is provided by Canvas and is a valid string
+          if (typeof __initial_auth_token === 'string' && __initial_auth_token.length > 10) {
+            await signInWithCustomToken(authentication, __initial_auth_token);
+          } else {
+            // Otherwise, always try anonymous sign-in for deployed app or if Canvas token is not valid
+            await signInAnonymously(authentication);
+          }
+        } catch (error) {
+          console.error("Firebase authentication error during initial sign-in:", error);
+          showMessageBox(`App Initialization Error: ${error.message}. Please refresh or try again.`);
+        }
+      };
+      signIn(); // Call the initial sign-in function
+
       // Listen for auth state changes
       const unsubscribeAuth = onAuthStateChanged(authentication, async (user) => {
         if (user) {
           setUserId(user.uid);
           setUserEmail(user.email); // Set user email if available
           console.log("User authenticated:", user.uid, user.email || 'anonymous');
-
-          // If user logs in after being anonymous, migrate data (basic example)
-          // This is a complex topic for full implementation, but a placeholder for thought.
-          // For now, new sign-ins will start fresh or load their existing data.
 
           // Load user data and activities for the authenticated user
           const userDocRef = doc(firestore, `artifacts/${appId}/users/${user.uid}/levelingSystem`, 'userData');
@@ -122,28 +130,16 @@ function App() {
           }
 
         } else {
-          // If no user is authenticated, try anonymous sign-in for new users
+          // If no user is authenticated (e.g., after logout or initial anonymous failed)
           setUserId(null);
           setUserEmail(null);
           setCurrentXp(0);
           setCurrentLevel(1);
           setActivityLogs([]);
           setUserDefinedActivities({});
-          console.log("No user authenticated. Attempting anonymous sign-in...");
-
-          try {
-            // Only attempt signInWithCustomToken if initialAuthToken is actually provided and is a long string (like a valid token)
-            if (initialAuthToken) {
-              await signInWithCustomToken(authentication, initialAuthToken);
-            } else {
-              await signInAnonymously(authentication);
-            }
-          } catch (error) {
-            console.error("Anonymous sign-in failed:", error);
-            showMessageBox(`App Initialization Error: ${error.message}. Please refresh or try again.`);
-          }
+          console.log("No user authenticated.");
         }
-        setLoading(false); // Authentication check is complete
+        setLoading(false); // Ensure loading is set to false regardless of auth success/failure
       });
 
       return () => unsubscribeAuth();
@@ -152,7 +148,7 @@ function App() {
       showMessageBox(`Failed to initialize Firebase: ${error.message}`);
       setLoading(false);
     }
-  }, []); // Removed db and auth from dependencies to avoid re-initializing Firebase
+  }, []); // Removed db and auth from dependencies to avoid re-initialization loops
 
   // Fetch activity logs when userId and db are available (separate effect for logs)
   useEffect(() => {
