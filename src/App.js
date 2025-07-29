@@ -16,7 +16,10 @@ const firebaseConfig = {
   appId: "1:856640373652:web:9a0d053bd0284dff078581"
 };
 
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+// Refined check for initialAuthToken: only use if it's a non-empty string (likely a valid token)
+const initialAuthToken = (typeof __initial_auth_token === 'string' && __initial_auth_token.length > 10) // Custom tokens are typically long
+  ? __initial_auth_token
+  : null;
 
 // Define predefined activities and their XP values
 const predefinedActivities = {
@@ -74,8 +77,8 @@ function App() {
       // Sign in anonymously or with custom token
       const signIn = async () => {
         try {
-          // Only attempt signInWithCustomToken if initialAuthToken is actually provided and not empty
-          if (typeof initialAuthToken === 'string' && initialAuthToken.length > 0) {
+          // Only attempt signInWithCustomToken if initialAuthToken is actually provided and is a long string (like a valid token)
+          if (initialAuthToken) { // initialAuthToken is now null if __initial_auth_token is not a long string
             await signInWithCustomToken(authentication, initialAuthToken);
           } else {
             await signInAnonymously(authentication);
