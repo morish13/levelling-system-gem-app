@@ -5,7 +5,17 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, onSna
 
 // Define global variables for Firebase configuration and app ID
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+// IMPORTANT: YOUR ACTUAL FIREBASE PROJECT CONFIGURATION
+const firebaseConfig = {
+  apiKey: "AIzaSyBe-g4sPleK6EANM2QXhjnuHFz7GXn9l3g",
+  authDomain: "solo-level-gem-v2.firebaseapp.com",
+  projectId: "solo-level-gem-v2",
+  storageBucket: "solo-level-gem-v2.firebasestorage.app",
+  messagingSenderId: "856640373652",
+  appId: "1:856640373652:web:9a0d053bd0284dff078581"
+};
+
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 // Define predefined activities and their XP values
@@ -55,7 +65,7 @@ function App() {
   // Initialize Firebase and set up authentication listener
   useEffect(() => {
     try {
-      const app = initializeApp(firebaseConfig);
+      const app = initializeApp(firebaseConfig); // This firebaseConfig must be your actual project config
       const firestore = getFirestore(app);
       const authentication = getAuth(app);
       setDb(firestore);
@@ -208,8 +218,7 @@ function App() {
               properties: {
                 "name": { "type": "STRING" },
                 "xp": { "type": "NUMBER" }
-              },
-              "propertyOrdering": ["name", "xp"]
+              }
             }
           }
         }
@@ -360,7 +369,7 @@ function App() {
         showMessageBox(levelUpMessage + (llmLevelUpInsight ? `\n\n${llmLevelUpInsight}` : ''));
       }
 
-    } catch (error) { // FIX: Removed '=>' here
+    } catch (error) {
       console.error("Error logging activity:", error);
       showMessageBox(`Error logging activity: ${error.message}`);
     }
