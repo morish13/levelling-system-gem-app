@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithCustomToken,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword, // Added for email/password signup
+  signInWithEmailAndPassword,     // Added for email/password login
+  signOut                       // Added for logout
+} from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, addDoc, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 
 // Define global variables for Firebase configuration and app ID
@@ -45,6 +53,7 @@ function App() {
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState(null); // New state for user email
   const [currentXp, setCurrentXp] = useState(0);
   const [currentLevel, setCurrentLevel] = useState(1);
   const [activityLogs, setActivityLogs] = useState([]);
@@ -59,6 +68,13 @@ function App() {
   const [customActivityXp, setCustomActivityXp] = useState('');
   const [userDefinedActivities, setUserDefinedActivities] = useState({}); // New state for user-defined activities
 
+  // Auth specific states
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLogin, setIsLogin] = useState(true); // true for login, false for signup
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+
   // Function to show a custom modal message
   const showMessageBox = (content) => {
     setModalContent(content);
@@ -68,36 +84,64 @@ function App() {
   // Initialize Firebase and set up authentication listener
   useEffect(() => {
     try {
-      const app = initializeApp(firebaseConfig); // This firebaseConfig must be your actual project config
+      const app = initializeApp(firebaseConfig);
       const firestore = getFirestore(app);
       const authentication = getAuth(app);
       setDb(firestore);
       setAuth(authentication);
 
-      // Sign in anonymously or with custom token
-      const signIn = async () => {
-        try {
-          // Only attempt signInWithCustomToken if initialAuthToken is actually provided and is a long string (like a valid token)
-          if (initialAuthToken) { // initialAuthToken is now null if __initial_auth_token is not a long string
-            await signInWithCustomToken(authentication, initialAuthToken);
-          } else {
-            await signInAnonymously(authentication);
-          }
-        } catch (error) {
-          console.error("Firebase authentication error:", error);
-          showMessageBox(`Authentication failed: ${error.message}`);
-        }
-      };
-      signIn();
-
       // Listen for auth state changes
-      const unsubscribeAuth = onAuthStateChanged(authentication, (user) => {
+      const unsubscribeAuth = onAuthStateChanged(authentication, async (user) => {
         if (user) {
           setUserId(user.uid);
-          console.log("User authenticated:", user.uid);
+          setUserEmail(user.email); // Set user email if available
+          console.log("User authenticated:", user.uid, user.email || 'anonymous');
+
+          // If user logs in after being anonymous, migrate data (basic example)
+          // This is a complex topic for full implementation, but a placeholder for thought.
+          // For now, new sign-ins will start fresh or load their existing data.
+
+          // Load user data and activities for the authenticated user
+          const userDocRef = doc(firestore, `artifacts/${appId}/users/${user.uid}/levelingSystem`, 'userData');
+          const userActivitiesDocRef = doc(firestore, `artifacts/${appId}/users/${user.uid}/levelingSystem`, 'userActivities');
+
+          const userSnap = await getDoc(userDocRef);
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            setCurrentXp(data.current_xp || 0);
+            setCurrentLevel(data.current_level || 1);
+          } else {
+            await setDoc(userDocRef, { current_xp: 0, current_level: 1 });
+          }
+
+          const activitiesSnap = await getDoc(userActivitiesDocRef);
+          if (activitiesSnap.exists()) {
+            setUserDefinedActivities(activitiesSnap.data().activities || {});
+          } else {
+            await setDoc(userActivitiesDocRef, { activities: {} });
+          }
+
         } else {
+          // If no user is authenticated, try anonymous sign-in for new users
           setUserId(null);
-          console.log("No user authenticated.");
+          setUserEmail(null);
+          setCurrentXp(0);
+          setCurrentLevel(1);
+          setActivityLogs([]);
+          setUserDefinedActivities({});
+          console.log("No user authenticated. Attempting anonymous sign-in...");
+
+          try {
+            // Only attempt signInWithCustomToken if initialAuthToken is actually provided and is a long string (like a valid token)
+            if (initialAuthToken) {
+              await signInWithCustomToken(authentication, initialAuthToken);
+            } else {
+              await signInAnonymously(authentication);
+            }
+          } catch (error) {
+            console.error("Anonymous sign-in failed:", error);
+            showMessageBox(`App Initialization Error: ${error.message}. Please refresh or try again.`);
+          }
         }
         setLoading(false); // Authentication check is complete
       });
@@ -108,33 +152,12 @@ function App() {
       showMessageBox(`Failed to initialize Firebase: ${error.message}`);
       setLoading(false);
     }
-  }, []);
+  }, []); // Removed db and auth from dependencies to avoid re-initializing Firebase
 
-  // Fetch user data, activity logs, and user-defined activities when userId and db are available
+  // Fetch activity logs when userId and db are available (separate effect for logs)
   useEffect(() => {
     if (userId && db) {
-      const userDocRef = doc(db, `artifacts/${appId}/users/${userId}/levelingSystem`, 'userData');
       const activityLogsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/activityLogs`);
-      const userActivitiesDocRef = doc(db, `artifacts/${appId}/users/${userId}/levelingSystem`, 'userActivities');
-
-      // Subscribe to user data changes
-      const unsubscribeUserData = onSnapshot(userDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setCurrentXp(data.current_xp || 0);
-          setCurrentLevel(data.current_level || 1);
-        } else {
-          // If user data doesn't exist, initialize it
-          setDoc(userDocRef, { current_xp: 0, current_level: 1 })
-            .then(() => console.log("User data initialized."))
-            .catch((error) => console.error("Error initializing user data:", error));
-        }
-      }, (error) => {
-        console.error("Error fetching user data:", error);
-        showMessageBox(`Error fetching user data: ${error.message}`);
-      });
-
-      // Subscribe to activity logs changes (ordered by timestamp, limited to 10 for display)
       const q = query(activityLogsCollectionRef, orderBy('timestamp', 'desc'), limit(10));
       const unsubscribeActivityLogs = onSnapshot(q, (snapshot) => {
         const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -143,31 +166,10 @@ function App() {
         console.error("Error fetching activity logs:", error);
         showMessageBox(`Error fetching activity logs: ${error.message}`);
       });
-
-      // Subscribe to user-defined activities changes
-      const unsubscribeUserActivities = onSnapshot(userActivitiesDocRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          setUserDefinedActivities(data.activities || {});
-        } else {
-          // If user activities don't exist, initialize it
-          setDoc(userActivitiesDocRef, { activities: {} })
-            .then(() => console.log("User activities initialized."))
-            .catch((error) => console.error("Error initializing user activities:", error));
-        }
-      }, (error) => {
-        console.error("Error fetching user-defined activities:", error);
-        showMessageBox(`Error fetching user-defined activities: ${error.message}`);
-      });
-
-
-      return () => {
-        unsubscribeUserData();
-        unsubscribeActivityLogs();
-        unsubscribeUserActivities();
-      };
+      return () => unsubscribeActivityLogs();
     }
   }, [db, userId]);
+
 
   // Function to call Gemini API for Level Up Insight
   const getLevelUpInsight = async (level) => {
@@ -393,14 +395,45 @@ function App() {
   // Combine predefined and user-defined activities for display
   const allActivities = { ...predefinedActivities, ...userDefinedActivities };
 
+  // Handle authentication form submission
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        await createUserWithEmailAndPassword(auth, email, password);
+      }
+      setShowAuthModal(false); // Close modal on success
+      setEmail('');
+      setPassword('');
+    } catch (error) {
+      setAuthError(error.message);
+      console.error("Authentication error:", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    if (auth) {
+      try {
+        await signOut(auth);
+        showMessageBox("Logged out successfully. Your progress is saved!");
+      } catch (error) {
+        showMessageBox(`Logout failed: ${error.message}`);
+        console.error("Logout error:", error);
+      }
+    }
+  };
+
+
   return (
     <div
       className="min-h-screen bg-cover bg-center bg-fixed font-inter p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden"
       style={{
-        // Replaced placeholder with a more thematic, dark fantasy-style image URL
-        backgroundImage: 'url("https://images.pexels.com/photos/1768512/pexels-photo-1768512.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260")', // New, more reliable image URL
+        backgroundImage: 'url("https://images.pexels.com/photos/1768512/pexels-photo-1768512.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=750&w=1260")',
         backgroundBlendMode: 'overlay',
-        backgroundColor: 'rgba(0, 0, 0, 0.88)', // Darker overlay for more dramatic effect
+        backgroundColor: 'rgba(0, 0, 0, 0.88)',
       }}
     >
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -420,13 +453,13 @@ function App() {
               top: `${Math.random() * 100}%`,
               animationDelay: `${Math.random() * 10}s`,
               animationDuration: `${Math.random() * 10 + 5}s`,
-              boxShadow: '0 0 8px 4px rgba(168, 85, 247, 0.7)', // Purple glow
+              boxShadow: '0 0 8px 4px rgba(168, 85, 247, 0.7)',
             }}
           ></div>
         ))}
       </div>
 
-      {/* Custom Modal for general messages */}
+      {/* General Message Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 text-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center border-2 border-purple-700 animate-fade-in custom-glow-border">
@@ -442,7 +475,7 @@ function App() {
         </div>
       )}
 
-      {/* Modal for Generated Quests */}
+      {/* Generated Quests Modal */}
       {showQuestsModal && (
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-900 text-white p-6 rounded-xl shadow-2xl max-w-lg w-full border-2 border-green-700 animate-fade-in custom-glow-border">
@@ -469,12 +502,85 @@ function App() {
         </div>
       )}
 
+      {/* Authentication Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 text-white p-6 rounded-xl shadow-2xl max-w-sm w-full border-2 border-indigo-700 animate-fade-in custom-glow-border">
+            <h3 className="text-2xl font-bold mb-4 text-indigo-400 text-center drop-shadow-md">
+              {isLogin ? 'Login to System' : 'Register New Hunter'}
+            </h3>
+            <form onSubmit={handleAuthSubmit} className="space-y-4">
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 shadow-inner-dark"
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 rounded-lg bg-gray-800 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-400 shadow-inner-dark"
+                required
+              />
+              {authError && <p className="text-red-400 text-sm text-center">{authError}</p>}
+              <button
+                type="submit"
+                className="w-full px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-semibold rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105 border border-indigo-500 custom-button-glow"
+              >
+                {isLogin ? 'Login' : 'Register'}
+              </button>
+            </form>
+            <button
+              onClick={() => setIsLogin(!isLogin)}
+              className="mt-4 w-full text-sm text-indigo-300 hover:text-indigo-200 transition-colors duration-200"
+            >
+              {isLogin ? 'Need an account? Register' : 'Already have an account? Login'}
+            </button>
+            <button
+              onClick={() => setShowAuthModal(false)}
+              className="mt-4 w-full text-sm text-gray-400 hover:text-gray-300 transition-colors duration-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+
       <div className="relative z-10 bg-gray-900 bg-opacity-90 p-6 sm:p-8 rounded-2xl shadow-2xl w-full max-w-3xl mb-8 border-2 border-purple-700 transform transition-all duration-300 hover:scale-[1.01] custom-glow-border">
         <h1 className="text-4xl sm:text-5xl font-extrabold text-center text-white mb-6 drop-shadow-lg">
           <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-indigo-400 text-shadow-glow">
             SHADOW MONARCH SYSTEM
           </span>
         </h1>
+
+        <div className="flex justify-center gap-4 mb-6">
+          {!userId || userEmail === null ? ( // Show login/signup if not logged in or is anonymous
+            <button
+              onClick={() => { setShowAuthModal(true); setIsLogin(true); setAuthError(''); }}
+              className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-semibold rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105 border border-blue-500 custom-button-glow"
+            >
+              Login / Register
+            </button>
+          ) : (
+            <>
+              <span className="text-lg text-gray-300 flex items-center">
+                Logged in as: <span className="font-bold text-indigo-300 ml-2">{userEmail || 'Anonymous Hunter'}</span>
+              </span>
+              <button
+                onClick={handleLogout}
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white font-semibold rounded-lg shadow-lg transition duration-300 ease-in-out transform hover:scale-105 border border-red-500 custom-button-glow"
+              >
+                Logout
+              </button>
+            </>
+          )}
+        </div>
+
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mb-8 text-white">
           <div className="bg-gray-800 p-5 rounded-xl text-center shadow-lg border border-indigo-600 transform transition-transform duration-200 hover:scale-105 custom-card-glow">
